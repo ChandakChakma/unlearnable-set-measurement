@@ -1,0 +1,6 @@
+checkpoints/
+results/*.json
+logs/
+*.parquet
+__pycache__/
+*.safetensors
