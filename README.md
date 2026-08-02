@@ -1,4 +1,4 @@
-# The Unlearnable Set Has No Fixed Point
+# The Unlearnable Set Has No Fixed Point: Aggregation Operators Determine RLVR Training Subsets
 
 Code and per-prompt data for *"The Unlearnable Set Has No Fixed Point: Aggregation
 Operators, Not Data, Determine Which RLVR Examples Are Called Unlearnable."*
@@ -23,7 +23,7 @@ step 120, on **one RTX 3090 Ti (24 GB)**. Total compute: **~16 GPU-hours**.
 | `\|D_u\|` by seed choice | 142–148 (~4%) |
 | Excluded prompts that are demonstrably solvable | **119 of 217** |
 | Same-model vs cross-seed Jaccard (N=32) | 0.798 vs 0.741 → 78% of disagreement is sampling |
-| Same-model vs cross-seed disagreement (N=128) | 0.111 vs 0.187 → 59% |
+| Same-model vs cross-seed disagreement (N=128) | 0.137 vs 0.187 → 73% |
 | K=5 intersection against a 128-sample reference | precision 1.000, recall 0.486 (95% CI 0.367–0.607) |
 | Measured training rollouts per prompt | 53.3 mean, 56 median |
 
@@ -53,12 +53,15 @@ EXPERIMENTS/
     make_rest_subset.py       builds the complement of the first high-sample pass
     analyze_noise.py          same-model Jaccard, analytic binomial prediction
     final_du.py               pooled reference, poolability test, precision/recall
+    run_same_model_n128.sh    Future Work B.1: repeat the N=128 eval, same checkpoint
+    same_model_n128.py        measured same-model Jaccard, binomial-model drift
     subset_groups.json        the 404 ever-flagged prompts and 60 sampled controls
     analysis/
       noise_report.md         same-model control, analytic prediction
       final_du_report.md      D_u at N=128, poolability, K=5 audit
       exclusion_sensitivity.md   the four aggregation rules
       distance_to_tau.md      per-prompt flip rates by group
+      same_model_n128.md      measured same-model baseline at N=128 (B.1)
       true_rates_all.csv      128-sample pass@1 for all 1023 prompts
       D_u_N128.json           the reference set
 
@@ -90,6 +93,23 @@ Every stage is skip-if-done and writes into `analysis/`.
 `$HOME/miniconda3/envs/vllm/bin`. Set `VLLM_ENV_BIN` if your environment is elsewhere.
 Requires the dependencies of the upstream repository plus `sglang` for evaluation, and
 `scipy` for the statistical tests in `final_du.py`.
+
+**Evaluations are not bit-reproducible.** `gen_utils_sglang.py` forwards only
+`temperature`, `top_p`, `max_new_tokens` and `stop` to the sglang engine, and
+`evaluate_model.py`'s `seed_everything()` seeds `random`, `numpy` and `torch`, none of
+which the sglang sampler consults. The `--seed` flag therefore changes the output
+filename and nothing else. Two consequences:
+
+- It is *why* the same-model control is valid — two evaluations of one checkpoint are
+  genuinely independent draws, not a replay. At N=32 they agree at Jaccard 0.798, not
+  1.000, which is the empirical demonstration.
+- A re-run **will not reproduce the exact Jaccard values reported here.** Expect
+  agreement to the second decimal, not the third. The per-prompt CSVs in `analysis/`
+  are the record of the specific draws this paper reports; regenerating them produces
+  a different, equally valid sample.
+
+Everything downstream of the evaluation JSONs — the decay curve, the exclusion-rule
+table, the figures — *is* deterministic given those files.
 
 **Directory layout.** `REPO_ROOT` resolves to `../../unlearnability-rlvr` relative to each
 script, so the upstream repository is expected as a sibling directory. Override with the

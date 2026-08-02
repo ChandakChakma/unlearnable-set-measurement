@@ -71,15 +71,23 @@ no_reward, only 69 are consistently so.
 
 *source: `analyze_noise.py`; model E[J] = Σ Pᵢ² / Σ(2Pᵢ − Pᵢ²), Pᵢ = P(X ≤ ⌊τN⌋ | Bin(N, pᵢ))*
 
-| N | predicted same-model J | observed |
-|---|---|---|
-| 32 | **0.799** | 0.798 (same-model) |
-| 64 | 0.847 | — |
-| 128 | 0.889 | **0.813** (cross-seed) |
-| 256 | 0.921 | — |
-| 512 | 0.942 | — |
+| N | predicted same-model J | measured same-model | error |
+|---|---|---|---|
+| 32 | **0.799** | **0.798** | 0.001 |
+| 64 | 0.847 | — | — |
+| 128 | 0.889 | **0.863** | **0.026** |
+| 256 | 0.921 | — | *unvalidated* |
+| 512 | 0.942 | — | *unvalidated* |
 
-Validation at N=32: predicted 0.799 vs observed 0.798, **delta +0.001**.
+Validation at N=32: predicted 0.799 vs measured 0.798, **delta +0.001**.
+At N=128 the error is 0.026 — see §12b for why the model drifts with N.
+
+**The N=256 and N=512 rows are unvalidated** and inherit that drift, which grows
+with N. Read them as **upper bounds on agreement**, not as estimates.
+
+Note the "measured" column is same-model throughout, so the comparison is
+like-for-like. The cross-seed value at N=128 (0.813) belongs in §12, not here —
+pairing it against a same-model prediction would compare different quantities.
 
 ## 6. Measured rollouts per prompt
 
@@ -160,18 +168,25 @@ A prompt at exactly tau is a coin flip at every N; the figure requires a stated 
 
 ## 12. Cross-seed Jaccard at N=128 — the residual training component
 
-*source: this run, seed-1 and seed-2 checkpoints both at N=128*
+*source: seed-1 and seed-2 checkpoints at N=128; same-model row from
+`same_model_n128.md` (Future Work B.1, measured)*
 
 | | Jaccard | disagreement |
 |---|---|---|
 | cross-seed @N=32 | 0.741 | 0.259 |
 | same-model @N=32 (pure eval noise) | 0.798 | 0.202 |
 | **cross-seed @N=128** | **0.813** | **0.187** |
-| same-model @N=128 (analytic) | 0.889 | 0.111 |
+| **same-model @N=128 (measured)** | **0.863** | **0.137** |
 
-Excess over eval noise at N=128: 0.076, i.e. training variation
-accounts for ~41% of the N=128 cross-seed disagreement.
-At N=32 evaluation noise dominated (0.202 of 0.259); at N=128 it is 0.111 of 0.187.
+All four values are now measured; none is analytic.
+
+Excess over eval noise at N=128: **0.050**, i.e. training variation accounts for
+**27%** of the N=128 cross-seed disagreement, and evaluation noise for **73%**.
+At N=32 evaluation noise accounts for 0.202 of 0.259 (78%).
+
+Supporting counts for the same-model row: flagged sets **289** (reference,
+eval-seed 0) and **296** (repeat, eval-seed 1), shared **271**, symmetric
+difference **43**. Pass@1 agrees at 0.4717 vs 0.4711, confirming one model.
 
 ### Seed-2 comparison (items 4 & 6)
 
@@ -184,6 +199,33 @@ At N=32 evaluation noise dominated (0.202 of 0.259); at N=128 it is 0.111 of 0.1
 D_u overlap **56**; sub-tau overlap 257, union 316. D_u Jaccard 0.629 —
 lower than the 0.813 sub-tau Jaccard because the exclusion shrinks both sets and
 amplifies relative disagreement.
+
+### 12b. Binomial-model drift with N
+
+*source: `same_model_n128.md` §1*
+
+The binomial model E[J] = Σ Pᵢ² / Σ(2Pᵢ − Pᵢ²) was validated at N=32 and then used
+to predict N=128. Measuring N=128 directly shows the model degrades with N:
+
+| N | predicted | measured | error |
+|---|---|---|---|
+| 32 | 0.799 | 0.798 | **0.001** |
+| 128 | 0.889 | 0.863 | **0.026** |
+
+The error grows 26x. The cause is estimator noise, not the binomial form: the model
+takes p̂ as the true rate, but p̂ is itself a 128-sample estimate, and feeding a noisy
+p̂ into P(X ≤ ⌊τN⌋) inflates predicted agreement. Recomputing the prediction from a
+pooled 256-sample p̂ (reference + repeat) moves it toward the measurement:
+
+| p̂ source | samples | predicted J @N=128 |
+|---|---|---|
+| reference only (the value §5 reports) | 128 | 0.889 |
+| reference + repeat pooled | 256 | 0.879 |
+| — measured — | — | **0.863** |
+
+**Consequence for §5.** The N=256 and N=512 rows of that prediction table were never
+validated and inherit this drift. Read them as **upper bounds on agreement**, not
+estimates. Do not quote them as predicted Jaccard values without the caveat.
 
 ## 13. GPU hours
 
@@ -210,7 +252,7 @@ Numbers that appear differently across reports, and which to trust.
 | 2 | zero-rate count: **98** vs **105** | 98 in an intermediate check; 105 in §8 rule (d) | Both correct, different populations. 98 = never-solved *among the 217 the union excludes*; 105 = never-solved *among all 289 sub-tau*. Difference of 7 = the "observed but not solvable" prompts in §9. |
 | 3 | same-model Jaccard **0.798** vs **0.803** | `noise_report.md` headline vs its analytic section | Both correct. 0.798 on all 1023; 0.803 on pass-1's 464. **Quote 0.798**; label 0.803 as restricted. |
 | 4 | rule (d) \|D_u\| = **184**, not 191 | expected 289−98 | 191 used the 98 from register #2. Correct arithmetic is 289−105 = **184**. |
-| 5 | eval-noise share: **78%** vs **59%** | `noise_report.md` (N=32) vs §12 (N=128) | Not a contradiction — the share is N-dependent. At N=32 noise is 0.202 of 0.259 (78%); at N=128 it is 0.111 of 0.187 (59%). Always state N. |
+| 5 | eval-noise share: **78%** (N=32) vs **73%** (N=128) | `noise_report.md` (N=32) vs §12 | Not a contradiction — the share is N-dependent. At N=32 noise is 0.202 of 0.259 (78%); at N=128 it is 0.137 of 0.187 (73%). Always state N. **The earlier 59% is superseded**: it used the analytic same-model baseline of 0.889, which over-predicted agreement, so it under-counted evaluation noise. The measured baseline is 0.863 (§12b). |
 | 6 | rollouts per prompt: **~16** vs **53.3** | draft estimate vs §6 measurement | The ~16 was derived, never measured. **Use 53.3 mean / 56 median.** |
 | 7 | training-variation estimate: **0.057** vs **0.076** | naive N=32 subtraction vs §12 direct measurement | Jaccard disagreement does not decompose additively, so the subtraction is only indicative. **Quote 0.076**, from the direct N=128 measurement against the analytic baseline. |
 
@@ -218,7 +260,9 @@ Numbers that appear differently across reports, and which to trust.
 
 ## 15. Future work — NOT run, E0 is frozen
 
-1. **Same-model repeat at N=128.** §12's 0.889 baseline is analytic. One more 1023×128 eval of the *same* checkpoint would measure it directly and firm up the 0.076 training component. ~2 h.
+*(B.1, the same-model repeat at N=128, has been run; its result is in §12 and §12b and `same_model_n128.md`. It is removed from this list.)*
+
+1. **Same-model Jaccard at N=256.** §12b shows the binomial model's error growing 0.001 → 0.026 from N=32 to N=128. Measuring N=256 tests whether the drift keeps growing and checks the p̂-noise account directly — that account predicts the gap should *shrink* once p̂ is estimated from more samples than the prediction targets. ~4 GPU-hours.
 2. **Fisher-exact treatment of the tau=0.1 label**, paralleling arXiv:2606.15455 Appendix C's zero-threshold version. Purely analytical, no GPU.
 3. **tau sensitivity.** Everything here fixes tau=0.1. The whole analysis re-runs on existing JSONs at tau ∈ {0.05, 0.15, 0.2}. CPU only.
 4. **no_reward at N=128.** The 264-prompt union is defined from ~53 training rollouts. Recomputing an equivalent criterion from 128 clean samples would test whether the exclusion survives its own measurement.
