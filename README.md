@@ -1,13 +1,13 @@
 # The Unlearnable Set Has No Fixed Point: Aggregation Operators Determine RLVR Training Subsets
 
 Code and per-prompt data for *"The Unlearnable Set Has No Fixed Point: Aggregation
-Operators, Not Data, Determine Which RLVR Examples Are Called Unlearnable."*
+Operators Determine RLVR Training Subsets."*
 
 We examine how the *unlearnable set* of Chen et al. (ICML 2026) is constructed, and find
 that the construction is not well posed: both of its aggregation operators shrink the set
 monotonically in the number of training seeds, so it has no limit and is undefined without
-stating that number. Holding the data fixed, the set ranges from 72 to 225 prompts
-depending only on which rule is applied, while individual seeds agree to within four
+stating that number. Holding the data fixed, the set ranges from 74 to 228 prompts
+depending only on which rule is applied, while individual seeds agree to within three
 percent.
 
 All experiments use **Qwen2.5-0.5B** on **MATH levels 1–4** (1023-prompt subset), GRPO to
@@ -19,13 +19,38 @@ step 120, on **one RTX 3090 Ti (24 GB)**. Total compute: **~16 GPU-hours**.
 
 | | |
 |---|---|
-| `\|D_u\|` by aggregation rule | 72 (published) / 145.4 / 184 / 225 |
-| `\|D_u\|` by seed choice | 142–148 (~4%) |
-| Excluded prompts that are demonstrably solvable | **119 of 217** |
-| Same-model vs cross-seed Jaccard (N=32) | 0.798 vs 0.741 → 78% of disagreement is sampling |
-| Same-model vs cross-seed disagreement (N=128) | 0.137 vs 0.187 → 73% |
-| K=5 intersection against a 128-sample reference | precision 1.000, recall 0.486 (95% CI 0.367–0.607) |
+| `\|D_u\|` by aggregation rule | 74 (published) / 147.8 / 181 / 228 |
+| `\|D_u\|` by seed choice | 145–150 (~3%) |
+| Excluded prompts that are demonstrably solvable | **116 of 218** |
+| Same-model vs cross-seed Jaccard (N=32) | 0.798 vs 0.751 → 81% of disagreement is sampling |
+| Same-model vs cross-seed disagreement (N=128) | 0.123 vs 0.166 → 74% |
+| K=5 intersection against a 128-sample reference | precision 0.976, recall 0.541 (95% CI 0.421–0.657) |
 | Measured training rollouts per prompt | 53.3 mean, 56 median |
+| Reference-verifier false positives | 0.50% of correct rollouts overall, **8.96% inside `D_u`** |
+
+All figures above are **guarded** — see the next section. Every set size is a lower
+bound.
+
+### The reference verifier admits answer-less responses
+
+The verifier of Chen et al. wraps a response in `\boxed{}` before parsing whenever it
+finds no boxed answer of its own, so any response whose prose happens to parse to the
+gold value is recorded as correct even though it states no answer. We count a rollout
+correct only when `verification.extracted_answer != '[invalid]'`, which is strictly
+stronger than a `\boxed` substring test: 241 rollouts contain the literal `\boxed` but
+were truncated before the closing brace, and a substring test retains them.
+
+The defect removes **307 correct rollouts (0.50%)** from the pooled 128-sample
+reference. It is not uniform: inside `D_u` it reaches **8.96%**, a ~17× enrichment,
+because `D_u` prompts are precisely the ones the model cannot solve, so a larger share
+of its apparent successes are spurious.
+
+Two consequences. Every headline number above is the guarded value, not the value the
+reference verifier produces. And because the `no_reward` exclusion is computed from
+training reward statistics whose rollout text was never retained, the same defect is
+presumably present there and is uncorrectable — `no_reward` *removes* prompts from
+`D_u` while the defect *inflates* apparent correctness, so **all reported set sizes are
+lower bounds.**
 
 ---
 
